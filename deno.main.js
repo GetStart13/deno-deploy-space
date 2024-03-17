@@ -2,12 +2,12 @@
 Deno.serve(async (req: Request) => {
     try {
         const parameters = req.url.split("?")[1];
-        const paramMap = new Map();
+        const paramObject = {};
         parameters.split("&").forEach(paramPair => {
             const paramBuffer = paramPair.split("=");
-            paramMap.set(paramBuffer[0], paramBuffer[1]);
+            paramObject[paramBuffer[0]] = paramBuffer[1];
         });
-        const parser = new TrojanParser(paramMap.get("url"));
+        const parser = new TrojanParser(paramObject.url);
         const yaml = await parser.getProxies();
 
         return new Response(yaml);
@@ -81,10 +81,13 @@ class TrojanParser {
         const rearBuffer = rear.split("#");
         const name = rearBuffer[1];
         const paramBuffer = rearBuffer[0].split("&");
-        const paramMap = new Map();
+        const paramObject = {};
         paramBuffer.forEach(paramPair => {
             const paramPairBuffer = paramPair.split("=");
-            paramMap.set(paramPairBuffer[0], paramPairBuffer[1]);
+            const mapping = Trojan.mapping[paramPairBuffer[0]];
+            if (mapping) {
+                Object.assign(paramObject, mapping(paramPairBuffer[1]));
+            }
         });
 
         return new Trojan({
@@ -93,8 +96,7 @@ class TrojanParser {
             server: server,
             port: port,
             password: password,
-            sni: paramMap.get("sni"),
-            skipCertVerify: paramMap.get("allowInsecure") ? true : false,
+            ...paramObject,
         });
     }
 }
@@ -116,4 +118,13 @@ class Trojan {
         this.alpn = alpn;
         this["skip-cert-verify"] = skipCertVerify ?? true;
     }
+    
+    static mapping = {
+        allowInsecure: value => {
+            return { skipCertVerify: parseInt(value) == 1 ? true : false };
+        },
+        sni: value => {
+            return { sni: value };
+        },
+    };
 }

@@ -85,7 +85,7 @@ class TrojanParser {
         // 一行行读取
         const drafts = subscribeText.split(/\r?\n/);
         drafts
-            // 过滤换行符
+            // 过滤空白行
             .filter(item => item.trim())
             // 转换成节点对象
             .forEach(item => {
@@ -101,8 +101,13 @@ class TrojanParser {
         return lines.join("");
     }
 
+    /**
+     * trojan://pwdpwd@server.domain.com:443?allowInsecure=1&peer=domain.com&sni=domain.com&type=tcp#示例trojan
+     *
+     * @param {string} trojanURL
+     * @returns Trojan 节点 or null
+     */
     convert(trojanURL) {
-        // trojan://pwdpwd@server.domain.com:443?allowInsecure=1&peer=domain.com&sni=domain.com&type=tcp#示例trojan
         // 检查 URL 是否合法
         const regex = /\w+:\/\/[^\s]+?\?(?:[^\s]+?=[^\s]+?)?/;
 
@@ -127,10 +132,13 @@ class TrojanParser {
         const rearBuffer = rear.split("#");
         const name = rearBuffer[1];
         const paramBuffer = rearBuffer[0].split("&");
-        const paramMap = new Map();
+        const paramObject = {};
         paramBuffer.forEach(paramPair => {
             const paramPairBuffer = paramPair.split("=");
-            paramMap.set(paramPairBuffer[0], paramPairBuffer[1]);
+            const mapping = Trojan.mapping[paramPairBuffer[0]];
+            if (mapping) {
+                Object.assign(paramObject, mapping(paramPairBuffer[1]));
+            }
         });
 
         return new Trojan({
@@ -139,8 +147,7 @@ class TrojanParser {
             server: server,
             port: port,
             password: password,
-            sni: paramMap.get("sni"),
-            skipCertVerify: paramMap.get("allowInsecure") ? true : false,
+            ...paramObject,
         });
     }
 }
@@ -162,4 +169,16 @@ class Trojan {
         this.alpn = alpn;
         this["skip-cert-verify"] = skipCertVerify ?? true;
     }
+
+    // URL 参数映射表，其它代码逻辑不需要再改动，需要维护的只有这个映射表
+    // 根据参数名匹配对应的函数，传入参数值，并转换(如果需要)，返回一个对象
+    // key: trojan url 参数名, value: 函数，入参为 url 参数值, return: Trojan 构造函数参数对象
+    static mapping = {
+        allowInsecure: value => {
+            return { skipCertVerify: parseInt(value) == 1 ? true : false };
+        },
+        sni: value => {
+            return { sni: value };
+        },
+    };
 }
